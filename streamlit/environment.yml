@@ -1,0 +1,6 @@
+name: nexus360
+channels:
+  - snowflake
+dependencies:
+  - plotly
+  - snowflake-snowpark-python

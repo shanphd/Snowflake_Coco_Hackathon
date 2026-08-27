@@ -1,0 +1,202 @@
+name: nexus360_analyst
+description: NEXUS 360 Insurance Customer 360 Analytics - Portfolio health, churn risk, and NBA effectiveness
+tables:
+  - name: CUSTOMER_HEALTH
+    base_table:
+      database: SFK_HACKATHON
+      schema: SFK_HACK_1
+      table: CUSTOMER_HEALTH
+    dimensions:
+      - name: customer_id
+        expr: CUSTOMER_ID
+        description: Unique customer identifier
+        data_type: VARCHAR
+      - name: risk_level
+        expr: RISK_LEVEL
+        description: Customer risk classification (CRITICAL, AT_RISK, MONITOR, HEALTHY)
+        data_type: VARCHAR
+    measures:
+      - name: customer_count
+        expr: COUNT(DISTINCT CUSTOMER_ID)
+        description: Total number of unique customers
+        data_type: NUMBER
+      - name: avg_health_score
+        expr: AVG(HEALTH_SCORE)
+        description: Average customer health score (0-100)
+        data_type: FLOAT
+      - name: avg_churn_risk
+        expr: AVG(CHURN_RISK)
+        description: Average churn risk across customers (0-1)
+        data_type: FLOAT
+      - name: churn_rate
+        expr: COUNT(CASE WHEN CHURN_RISK >= 0.4 THEN 1 END)::FLOAT / NULLIF(COUNT(*), 0)
+        description: Proportion of customers at elevated churn risk
+        data_type: FLOAT
+      - name: critical_customers
+        expr: COUNT(CASE WHEN RISK_LEVEL = 'CRITICAL' THEN 1 END)
+        description: Number of customers in CRITICAL risk level
+        data_type: NUMBER
+      - name: avg_sentiment
+        expr: AVG(SENTIMENT_SCORE)
+        description: Average sentiment score across customers
+        data_type: FLOAT
+      - name: avg_payment_score
+        expr: AVG(PAYMENT_SCORE)
+        description: Average payment health score
+        data_type: FLOAT
+      - name: avg_engagement_score
+        expr: AVG(ENGAGEMENT_SCORE)
+        description: Average customer engagement score
+        data_type: FLOAT
+    time_dimensions:
+      - name: scored_at
+        expr: SCORED_AT
+        description: Timestamp when health score was calculated
+        data_type: TIMESTAMP_NTZ
+
+  - name: CUSTOMER
+    base_table:
+      database: SFK_HACKATHON
+      schema: SFK_HACK_1
+      table: CUSTOMER
+    dimensions:
+      - name: customer_id
+        expr: CUSTOMER_ID
+        description: Unique customer identifier
+        data_type: VARCHAR
+      - name: segment
+        expr: SEGMENT
+        description: Customer segment (Premium, Standard, Basic, Enterprise)
+        data_type: VARCHAR
+      - name: region
+        expr: REGION
+        description: Geographic region
+        data_type: VARCHAR
+      - name: state
+        expr: STATE
+        description: US state
+        data_type: VARCHAR
+      - name: gender
+        expr: GENDER
+        description: Customer gender
+        data_type: VARCHAR
+    measures:
+      - name: total_customers
+        expr: COUNT(DISTINCT CUSTOMER_ID)
+        description: Total customer count
+        data_type: NUMBER
+      - name: avg_tenure_months
+        expr: AVG(TENURE_MONTHS)
+        description: Average customer tenure in months
+        data_type: FLOAT
+      - name: avg_lifetime_value
+        expr: AVG(LIFETIME_VALUE)
+        description: Average customer lifetime value
+        data_type: FLOAT
+      - name: total_lifetime_value
+        expr: SUM(LIFETIME_VALUE)
+        description: Sum of customer lifetime values
+        data_type: FLOAT
+    time_dimensions:
+      - name: created_at
+        expr: CREATED_AT
+        description: Customer creation date
+        data_type: TIMESTAMP_NTZ
+
+  - name: POLICY
+    base_table:
+      database: SFK_HACKATHON
+      schema: SFK_HACK_1
+      table: POLICY
+    dimensions:
+      - name: policy_id
+        expr: POLICY_ID
+        description: Unique policy identifier
+        data_type: VARCHAR
+      - name: customer_id
+        expr: CUSTOMER_ID
+        description: Customer who owns the policy
+        data_type: VARCHAR
+      - name: policy_type
+        expr: POLICY_TYPE
+        description: Type of insurance policy (Auto, Home, Life, Health, etc.)
+        data_type: VARCHAR
+      - name: status
+        expr: STATUS
+        description: Policy status (Active, Cancelled, Expired, Pending)
+        data_type: VARCHAR
+    measures:
+      - name: policy_count
+        expr: COUNT(DISTINCT POLICY_ID)
+        description: Total number of policies
+        data_type: NUMBER
+      - name: avg_premium
+        expr: AVG(PREMIUM_AMOUNT)
+        description: Average premium amount
+        data_type: FLOAT
+      - name: total_premium
+        expr: SUM(PREMIUM_AMOUNT)
+        description: Total premium revenue
+        data_type: FLOAT
+      - name: active_policies
+        expr: COUNT(CASE WHEN STATUS = 'Active' THEN 1 END)
+        description: Number of active policies
+        data_type: NUMBER
+    time_dimensions:
+      - name: start_date
+        expr: START_DATE
+        description: Policy start date
+        data_type: DATE
+      - name: end_date
+        expr: END_DATE
+        description: Policy end date
+        data_type: DATE
+
+  - name: NEXT_BEST_ACTION_LOG
+    base_table:
+      database: SFK_HACKATHON
+      schema: SFK_HACK_1
+      table: NEXT_BEST_ACTION_LOG
+    dimensions:
+      - name: action_type
+        expr: ACTION_TYPE
+        description: Type of NBA recommendation (RETENTION_OFFER, CLAIMS_ESCALATION, etc.)
+        data_type: VARCHAR
+      - name: decision
+        expr: DECISION
+        description: Approval decision (APPROVED, REJECTED)
+        data_type: VARCHAR
+      - name: outcome
+        expr: OUTCOME
+        description: Action outcome after execution
+        data_type: VARCHAR
+      - name: decided_by
+        expr: DECIDED_BY
+        description: Person who made the approval decision
+        data_type: VARCHAR
+    measures:
+      - name: action_count
+        expr: COUNT(DISTINCT ACTION_ID)
+        description: Total number of NBA actions logged
+        data_type: NUMBER
+      - name: approval_rate
+        expr: COUNT(CASE WHEN DECISION = 'APPROVED' THEN 1 END)::FLOAT / NULLIF(COUNT(*), 0)
+        description: Rate of actions approved vs total decisions
+        data_type: FLOAT
+      - name: rejection_rate
+        expr: COUNT(CASE WHEN DECISION = 'REJECTED' THEN 1 END)::FLOAT / NULLIF(COUNT(*), 0)
+        description: Rate of actions rejected
+        data_type: FLOAT
+      - name: effectiveness
+        expr: COUNT(CASE WHEN OUTCOME = 'SUCCESSFUL' THEN 1 END)::FLOAT / NULLIF(COUNT(CASE WHEN OUTCOME IS NOT NULL THEN 1 END), 0)
+        description: Success rate of executed actions
+        data_type: FLOAT
+    time_dimensions:
+      - name: decided_at
+        expr: DECIDED_AT
+        description: When the approval decision was made
+        data_type: TIMESTAMP_NTZ
+      - name: outcome_date
+        expr: OUTCOME_DATE
+        description: When the outcome was recorded
+        data_type: TIMESTAMP_NTZ
