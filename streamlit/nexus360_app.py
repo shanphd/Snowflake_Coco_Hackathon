@@ -211,35 +211,119 @@ def employee_copilot():
             "Service Agent"
         ], key="copilot_role")
 
+    # Sample questions
+    st.subheader("Try these sample questions:")
+    sample_questions = {
+        "Retention Manager": [
+            "Which customers are at critical churn risk and need immediate attention?",
+            "Show me customers with competitor mentions in the last 30 days",
+            "What retention offers are pending approval?",
+        ],
+        "Claims Analyst": [
+            "Which claims have been open for more than 14 days with negative sentiment?",
+            "Show me the claim friction moments detected this week",
+            "What is the average resolution time by claim type?",
+        ],
+        "Service Agent": [
+            "Give me a 360 view of customer CUST-000001",
+            "What are the top reasons customers are contacting us?",
+            "Show me customers with payment assistance recommendations",
+        ],
+    }
+
+    cols = st.columns(3)
+    for i, q in enumerate(sample_questions.get(role, sample_questions["Service Agent"])):
+        if cols[i].button(q, key=f"sample_{i}"):
+            st.session_state["prefill_question"] = q
+            st.experimental_rerun()
+
+    st.divider()
+
     # Chat interface
     if "messages" not in st.session_state:
         st.session_state.messages = []
 
+    # Display conversation history
     for msg in st.session_state.messages:
-        with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
+        if msg["role"] == "user":
+            st.info(f"**You:** {msg['content']}")
+        else:
+            st.success(f"**Copilot:** {msg['content']}")
 
-    if prompt := st.chat_input("Ask about customers, portfolio health, or actions..."):
+    # Input form
+    prefill = st.session_state.pop("prefill_question", "")
+    with st.form("copilot_form", clear_on_submit=True):
+        prompt = st.text_input("Ask about customers, portfolio health, or actions...", value=prefill)
+        submitted = st.form_submit_button("Send")
+
+    if submitted and prompt:
         st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
+        with st.spinner("Thinking..."):
+            full_prompt = f"[Role: {role}] {prompt}"
+            try:
+                # Step 1: Search for relevant evidence using Cortex Search
+                search_results = session.sql(f"""
+                    SELECT TOP 5 CONTENT, SOURCE_TYPE, CUSTOMER_ID, SENTIMENT
+                    FROM TABLE(
+                        SFK_HACKATHON.SFK_HACK_1.NEXUS360_EVIDENCE_SEARCH!SEARCH(
+                            QUERY => '{prompt.replace("'", "''")}',
+                            COLUMNS => ['CONTENT', 'SOURCE_TYPE', 'CUSTOMER_ID', 'SENTIMENT']
+                        )
+                    )
+                """).collect()
 
-        with st.chat_message("assistant"):
-            with st.spinner("Thinking..."):
-                full_prompt = f"[Role: {role}] {prompt}"
-                try:
-                    result = session.sql(f"""
-                        SELECT SNOWFLAKE.CORTEX.AGENT(
-                            'SFK_HACKATHON.SFK_HACK_1.NEXUS360_AGENT',
-                            '{full_prompt.replace("'", "''")}'
-                        ) AS RESPONSE
-                    """).collect()
-                    response = result[0]['RESPONSE'] if result else "Unable to get response"
-                except Exception as e:
-                    response = f"Agent error: {str(e)}"
+                context_text = ""
+                for r in search_results:
+                    context_text += f"[{r['SOURCE_TYPE']}] (Customer: {r['CUSTOMER_ID']}, Sentiment: {r['SENTIMENT']}): {r['CONTENT'][:300]}\n\n"
 
-                st.markdown(response)
-                st.session_state.messages.append({"role": "assistant", "content": response})
+                # Step 2: Get portfolio stats for context
+                stats = session.sql("""
+                    SELECT COUNT(*) AS TOTAL,
+                           SUM(CASE WHEN RISK_LEVEL = 'CRITICAL' THEN 1 ELSE 0 END) AS CRITICAL,
+                           SUM(CASE WHEN RISK_LEVEL = 'AT_RISK' THEN 1 ELSE 0 END) AS AT_RISK,
+                           ROUND(AVG(HEALTH_SCORE), 1) AS AVG_HEALTH,
+                           ROUND(AVG(CHURN_RISK), 3) AS AVG_CHURN
+                    FROM SFK_HACKATHON.SFK_HACK_1.CUSTOMER_HEALTH
+                """).collect()
+                stats_text = ""
+                if stats:
+                    s = stats[0]
+                    stats_text = f"Portfolio: {s['TOTAL']} customers, {s['CRITICAL']} critical, {s['AT_RISK']} at-risk, avg health {s['AVG_HEALTH']}, avg churn {s['AVG_CHURN']}"
+
+                # Step 3: Use Cortex COMPLETE with context
+                system_prompt = f"""You are NEXUS 360 Employee Copilot for an insurance company.
+Role: {role}. Answer based on the evidence and data provided.
+Portfolio Stats: {stats_text}
+Evidence from customer interactions:
+{context_text}
+Provide actionable insights. Be concise and specific."""
+
+                result = session.sql(f"""
+                    SELECT SNOWFLAKE.CORTEX.COMPLETE(
+                        'mistral-large2',
+                        ARRAY_CONSTRUCT(
+                            OBJECT_CONSTRUCT('role', 'system', 'content', '{system_prompt.replace("'", "''")}'),
+                            OBJECT_CONSTRUCT('role', 'user', 'content', '{full_prompt.replace("'", "''")}')
+                        ),
+                        OBJECT_CONSTRUCT('temperature', 0.3, 'max_tokens', 1024)
+                    ) AS RESPONSE
+                """).collect()
+
+                if result:
+                    resp_json = json.loads(result[0]['RESPONSE'])
+                    response = resp_json.get('choices', [{}])[0].get('messages', resp_json.get('choices', [{}])[0].get('message', '')).strip() if 'choices' in resp_json else str(resp_json)
+                    # Try to extract content from the response
+                    if isinstance(response, str) and response == '':
+                        response = resp_json.get('choices', [{}])[0].get('message', {}).get('content', 'No response generated')
+                    elif isinstance(response, dict):
+                        response = response.get('content', str(response))
+                else:
+                    response = "Unable to get response"
+            except Exception as e:
+                response = f"Error: {str(e)}"
+
+            st.session_state.messages.append({"role": "assistant", "content": response})
+            st.experimental_rerun()
 
 
 def nba_dashboard():
@@ -314,7 +398,7 @@ def nba_dashboard():
                     )
                 """).collect()
                 st.success(f"Action {selected_action} {decision} by {approver}")
-                st.rerun()
+                st.experimental_rerun()
             except Exception as e:
                 st.error(f"Error: {str(e)}")
     else:
@@ -462,12 +546,23 @@ def realtime_simulation():
 
 # ─── Navigation ───────────────────────────────────────────────────────────────
 
-pages = st.navigation([
-    st.Page(portfolio_view, title="Portfolio View", icon="📊"),
-    st.Page(customer_360, title="Customer 360", icon="👤"),
-    st.Page(employee_copilot, title="Employee Copilot", icon="🤖"),
-    st.Page(nba_dashboard, title="NBA Dashboard", icon="🎯"),
-    st.Page(realtime_simulation, title="Real-Time Simulation", icon="⚡"),
-])
+with st.sidebar:
+    st.title("NEXUS 360")
+    page = st.radio("Navigate", [
+        "📊 Portfolio View",
+        "👤 Customer 360",
+        "🤖 Employee Copilot",
+        "🎯 NBA Dashboard",
+        "⚡ Real-Time Simulation",
+    ], key="nav")
 
-pages.run()
+if page == "📊 Portfolio View":
+    portfolio_view()
+elif page == "👤 Customer 360":
+    customer_360()
+elif page == "🤖 Employee Copilot":
+    employee_copilot()
+elif page == "🎯 NBA Dashboard":
+    nba_dashboard()
+elif page == "⚡ Real-Time Simulation":
+    realtime_simulation()
