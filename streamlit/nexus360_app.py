@@ -472,7 +472,7 @@ def realtime_simulation():
                 session.sql(f"""
                     INSERT INTO SFK_HACKATHON.SFK_HACK_1.INTERACTION
                     (INTERACTION_ID, CUSTOMER_ID, CHANNEL, DIRECTION, INTERACTION_DATE, DURATION_SECONDS, TOPIC)
-                    VALUES ('INT-SIM-' || TO_VARCHAR(CURRENT_TIMESTAMP(), 'YYYYMMDDHH24MISS'),
+                    VALUES ('IS' || TO_VARCHAR(CURRENT_TIMESTAMP(), 'MMDDHH24MISSFF'),
                             '{customer_id}', '{channel}', 'Inbound', CURRENT_TIMESTAMP(), 300, '{topic}')
                 """).collect()
 
@@ -480,8 +480,8 @@ def realtime_simulation():
                 session.sql(f"""
                     INSERT INTO SFK_HACKATHON.SFK_HACK_1.TRANSCRIPT
                     (TRANSCRIPT_ID, INTERACTION_ID, CUSTOMER_ID, TRANSCRIPT_TEXT)
-                    VALUES ('TRN-SIM-' || TO_VARCHAR(CURRENT_TIMESTAMP(), 'YYYYMMDDHH24MISS'),
-                            'INT-SIM-' || TO_VARCHAR(CURRENT_TIMESTAMP(), 'YYYYMMDDHH24MISS'),
+                    VALUES ('TS' || TO_VARCHAR(CURRENT_TIMESTAMP(), 'MMDDHH24MISSFF'),
+                            'IS' || TO_VARCHAR(CURRENT_TIMESTAMP(), 'MMDDHH24MISSFF'),
                             '{customer_id}', '{transcript_text.replace("'", "''")}')
                 """).collect()
 
@@ -490,9 +490,9 @@ def realtime_simulation():
                     INSERT INTO SFK_HACKATHON.SFK_HACK_1.CUSTOMER_AI_ENRICHMENT
                     (ENRICHMENT_ID, CUSTOMER_ID, SOURCE_TABLE, SOURCE_ID,
                      SENTIMENT_SCORE, SENTIMENT_LABEL, CLASSIFICATION)
-                    VALUES ('ENR-SIM-' || TO_VARCHAR(CURRENT_TIMESTAMP(), 'YYYYMMDDHH24MISS'),
+                    VALUES ('ES' || TO_VARCHAR(CURRENT_TIMESTAMP(), 'MMDDHH24MISSFF'),
                             '{customer_id}', 'TRANSCRIPT',
-                            'TRN-SIM-' || TO_VARCHAR(CURRENT_TIMESTAMP(), 'YYYYMMDDHH24MISS'),
+                            'TS' || TO_VARCHAR(CURRENT_TIMESTAMP(), 'MMDDHH24MISSFF'),
                             {sentiment_sim},
                             '{"POSITIVE" if sentiment_sim >= 0.3 else "NEGATIVE" if sentiment_sim <= -0.3 else "NEUTRAL"}',
                             '{"CHURN" if topic == "Cancellation Request" else "CLAIM_FRICTION" if topic == "Claim Status" else "GENERAL_INQUIRY"}')
