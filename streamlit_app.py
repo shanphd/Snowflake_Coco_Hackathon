@@ -16,14 +16,20 @@ conn = st.connection("snowflake")
 
 
 def run_query(sql):
-    """Execute SQL and return pandas DataFrame."""
-    return conn.query(sql)
+    """Execute SELECT SQL and return pandas DataFrame."""
+    return conn.query(sql, ttl=60)
+
+
+def run_dml(sql):
+    """Execute DML (INSERT/UPDATE/MERGE/CALL) via session cursor."""
+    session = conn.session()
+    return session.sql(sql).collect()
 
 
 def run_query_safe(sql):
     """Execute SQL and return pandas DataFrame, empty on error."""
     try:
-        return conn.query(sql)
+        return conn.query(sql, ttl=60)
     except Exception as e:
         st.error(f"Query error: {str(e)}")
         return pd.DataFrame()
@@ -401,7 +407,7 @@ def nba_dashboard():
 
         if st.button("Submit Decision", key="nba_submit"):
             try:
-                run_query(f"""
+                run_dml(f"""
                     CALL SFK_HACKATHON.SFK_HACK_1.APPROVE_NBA_ACTION(
                         '{selected_action}', '{approver}', '{decision}'
                     )
@@ -479,35 +485,35 @@ def realtime_simulation():
                     classif = "CHURN" if topic == "Cancellation Request" else "CLAIM_FRICTION" if topic == "Claim Status" else "GENERAL_INQUIRY"
 
                     # Insert interaction
-                    run_query(f"""
+                    run_dml(f"""
                         INSERT INTO SFK_HACKATHON.SFK_HACK_1.INTERACTION
                         (INTERACTION_ID, CUSTOMER_ID, CHANNEL, DIRECTION, INTERACTION_DATE, DURATION_SECONDS, TOPIC)
-                        VALUES ('INT-SIM-' || TO_VARCHAR(CURRENT_TIMESTAMP(), 'YYYYMMDDHH24MISS'),
+                        VALUES ('IS' || TO_VARCHAR(CURRENT_TIMESTAMP(), 'MMDDHH24MISSFF'),
                                 '{customer_id}', '{channel}', 'Inbound', CURRENT_TIMESTAMP(), 300, '{topic}')
                     """)
 
                     # Insert transcript
-                    run_query(f"""
+                    run_dml(f"""
                         INSERT INTO SFK_HACKATHON.SFK_HACK_1.TRANSCRIPT
                         (TRANSCRIPT_ID, INTERACTION_ID, CUSTOMER_ID, TRANSCRIPT_TEXT)
-                        VALUES ('TRN-SIM-' || TO_VARCHAR(CURRENT_TIMESTAMP(), 'YYYYMMDDHH24MISS'),
-                                'INT-SIM-' || TO_VARCHAR(CURRENT_TIMESTAMP(), 'YYYYMMDDHH24MISS'),
+                        VALUES ('TS' || TO_VARCHAR(CURRENT_TIMESTAMP(), 'MMDDHH24MISSFF'),
+                                'IS' || TO_VARCHAR(CURRENT_TIMESTAMP(), 'MMDDHH24MISSFF'),
                                 '{customer_id}', '{transcript_text.replace("'", "''")}')
                     """)
 
                     # Insert enrichment
-                    run_query(f"""
+                    run_dml(f"""
                         INSERT INTO SFK_HACKATHON.SFK_HACK_1.CUSTOMER_AI_ENRICHMENT
                         (ENRICHMENT_ID, CUSTOMER_ID, SOURCE_TABLE, SOURCE_ID,
                          SENTIMENT_SCORE, SENTIMENT_LABEL, CLASSIFICATION)
-                        VALUES ('ENR-SIM-' || TO_VARCHAR(CURRENT_TIMESTAMP(), 'YYYYMMDDHH24MISS'),
+                        VALUES ('ES' || TO_VARCHAR(CURRENT_TIMESTAMP(), 'MMDDHH24MISSFF'),
                                 '{customer_id}', 'TRANSCRIPT',
-                                'TRN-SIM-' || TO_VARCHAR(CURRENT_TIMESTAMP(), 'YYYYMMDDHH24MISS'),
+                                'TS' || TO_VARCHAR(CURRENT_TIMESTAMP(), 'MMDDHH24MISSFF'),
                                 {sentiment_sim}, '{sent_label}', '{classif}')
                     """)
 
                     # Update health score
-                    run_query(f"""
+                    run_dml(f"""
                         MERGE INTO SFK_HACKATHON.SFK_HACK_1.CUSTOMER_HEALTH T
                         USING (
                             SELECT '{customer_id}' AS CUSTOMER_ID,
